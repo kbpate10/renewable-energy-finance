@@ -1,8 +1,8 @@
 # Renewable Energy Finance: A Data Analytics Exploration
 
 An end-to-end data analytics project examining the intersection of renewable energy growth,
-cost trends, and financial market performance. The analysis spans investment flows, levelized
-cost of energy, country-level generation, and clean energy stock returns.
+cost trends, and financial market performance across investment flows, levelized cost of
+energy, country-level generation, and clean energy stock returns.
 
 ---
 
@@ -10,41 +10,92 @@ cost of energy, country-level generation, and clean energy stock returns.
 
 | Section | Description |
 |---|---|
-| 1. Setup and Data Loading | Downloads and prepares all datasets |
+| 1. Setup and Data Loading | Loads all five datasets; explains what each measures and why it was chosen |
 | 2. Global Investment Trends | Annual clean energy investment growth (2004-2023) alongside solar and wind generation |
 | 3. LCOE Cost Revolution | Levelized cost decline curves for solar PV, wind, and natural gas (2010-2023) |
-| 4. Country-Level Analysis | Interactive choropleth map, top-20 generation leaders, and renewables share vs. GDP scatter |
-| 5. Clean Energy Stocks | Normalized performance, annual returns heatmap, and rolling correlation vs. fossil fuel ETF |
-| 6. Correlations and Insights | Cross-variable Pearson correlation matrix with quantified takeaways |
+| 4. Country-Level Analysis | Interactive choropleth map, top-20 generation leaders, renewables share vs. GDP scatter |
+| 5. Clean Energy Stocks | Normalized performance, annual returns heatmap, rolling correlation vs. fossil fuel ETF |
+| 6. Correlations and Insights | Cross-variable Pearson correlation matrix with five quantified takeaways |
 | 7. Conclusions | Summary findings and suggested next steps |
 
 ---
 
 ## Datasets
 
-All datasets are free and publicly available.
+All datasets are free and publicly available. Static datasets are bundled in the `data/`
+folder. Dynamic datasets (World Bank, Yahoo Finance) are fetched on first run and cached
+as CSV files in `data/` for all subsequent runs — no re-downloading needed.
 
-| Source | Coverage | Access |
-|---|---|---|
-| [Our World in Data - Energy](https://github.com/owid/energy-data) | Electricity generation by source, renewables share, 200+ countries, 1965-2023 | Auto-downloaded on first run |
-| [IEA World Energy Investment](https://www.iea.org/reports/world-energy-investment) | Global clean energy investment in USD billions, 2004-2023 | Hardcoded from published reports |
-| [IRENA Renewable Power Generation Costs](https://www.irena.org/Publications/2024/Sep/Renewable-Power-Generation-Costs-in-2023) | Levelized cost of energy by technology, 2010-2023 | Hardcoded from published reports |
-| [World Bank Open Data](https://data.worldbank.org/) | GDP per capita by country | Fetched via `wbgapi` Python library |
-| [Yahoo Finance](https://finance.yahoo.com/) | Daily stock prices for clean energy ETFs and individual companies | Fetched via `yfinance` Python library |
+### 1. Our World in Data - Energy (`data/owid-energy.csv`)
 
----
+- **Source:** https://github.com/owid/energy-data
+- **Direct CSV link:** https://raw.githubusercontent.com/owid/energy-data/master/owid-energy-data.csv
+- **Coverage:** 200+ countries, 1965-2023, 130 columns
+- **Key columns used:**
+  - `solar_electricity`, `wind_electricity`, `hydro_electricity`, `other_renewable_electricity` — generation in TWh
+  - `renewables_share_elec` — renewables as % of electricity mix
+  - `renewables_electricity` — total renewables generation (TWh)
+  - `iso_code` — ISO 3-letter country code (enables choropleth maps)
+  - `gdp`, `population` — for per-capita calculations
+- **Why this dataset:** Longest freely available country-level energy time series with
+  standardized country codes. Generation figures (TWh) track real-world renewable buildout
+  alongside financial data. Note: this dataset measures generation (TWh), not installed
+  capacity (GW).
 
-## Tickers Analyzed
+### 2. IEA World Energy Investment (`data/iea_investment.csv`)
 
-| Ticker | Name |
-|---|---|
-| ICLN | iShares Global Clean Energy ETF |
-| XLE | Energy Select Sector SPDR (fossil fuel benchmark) |
-| SPY | S&P 500 ETF (market benchmark) |
-| NEE | NextEra Energy |
-| ENPH | Enphase Energy |
-| FSLR | First Solar |
-| SEDG | SolarEdge Technologies |
+- **Source:** IEA World Energy Investment 2024 report
+- **Report link:** https://www.iea.org/reports/world-energy-investment
+- **Coverage:** Global, 2004-2023
+- **Columns:** `year`, `investment_bn` (USD billions), `source`
+- **Why this dataset:** Official global benchmark for clean energy capital flows. Covers all
+  clean energy sectors (renewables, EVs, grids, efficiency, storage) in a consistent annual
+  series. Data extracted from the publicly available IEA report and stored as CSV so the
+  project runs entirely offline.
+
+### 3. IRENA Renewable Power Generation Costs (`data/irena_lcoe.csv`)
+
+- **Source:** IRENA Renewable Power Generation Costs 2023 edition
+- **Report link:** https://www.irena.org/Publications/2024/Sep/Renewable-Power-Generation-Costs-in-2023
+- **Coverage:** Global weighted averages, 2010-2023
+- **Columns:** `year`, `solar_pv_utility_usd_mwh`, `onshore_wind_usd_mwh`, `natural_gas_ccgt_usd_mwh`, `source`
+- **Why this dataset:** Only freely available global LCOE time series covering both renewables
+  and fossil fuels side-by-side. Enables direct cost comparison and identification of the
+  year renewables crossed below gas. Data extracted from the publicly available IRENA report
+  and stored as CSV.
+
+### 4. World Bank GDP per Capita (`data/worldbank_gdp.csv`)
+
+- **Source:** World Bank Open Data — indicator `NY.GDP.PCAP.KD`
+- **Indicator page:** https://data.worldbank.org/indicator/NY.GDP.PCAP.KD
+- **Coverage:** 200+ countries, 2000-2023
+- **Columns:** `iso_code`, `wb_country`, `year`, `gdp_per_capita` (constant 2015 USD)
+- **Access:** Fetched automatically via the `wbgapi` Python library on first run and cached
+  as `data/worldbank_gdp.csv`.
+- **Why this dataset:** Provides a consistent, comparable measure of national wealth across
+  countries, used as the x-axis in the Section 4 scatter plot to test whether wealthier
+  nations have higher renewable energy shares.
+
+### 5. Yahoo Finance Stock Prices (`data/stock_prices.csv`)
+
+- **Source:** Yahoo Finance via the `yfinance` Python library
+- **Coverage:** 2019-01-01 to 2024-12-31, daily adjusted closing prices
+- **Columns:** `Date` (index), `ICLN`, `XLE`, `SPY`, `NEE`, `ENPH`, `FSLR`, `SEDG`
+- **Access:** Fetched automatically via `yfinance` on first run and cached as `data/stock_prices.csv`.
+- **Tickers:**
+
+  | Ticker | Name | Role in analysis |
+  |---|---|---|
+  | ICLN | iShares Global Clean Energy ETF | Clean energy benchmark |
+  | XLE | Energy Select Sector SPDR ETF | Fossil fuel benchmark |
+  | SPY | S&P 500 ETF | Broad market benchmark |
+  | NEE | NextEra Energy | Largest US clean utility |
+  | ENPH | Enphase Energy | Solar microinverters |
+  | FSLR | First Solar | US solar panel manufacturer |
+  | SEDG | SolarEdge Technologies | Solar inverters |
+
+- **Why this dataset:** Enables direct financial comparison of clean energy vs fossil fuel
+  vs broad market from 2019-2024, covering pre/post-COVID and the 2022 rate-hike cycle.
 
 ---
 
@@ -52,14 +103,19 @@ All datasets are free and publicly available.
 
 ```
 renewable-energy-finance/
-├── notebook.ipynb          # Main analysis notebook (fully executed)
-├── generate_notebook.py    # Script that generates notebook.ipynb via nbformat
-├── requirements.txt        # Python dependencies
+├── notebook.ipynb              # Main analysis notebook (fully executed with outputs)
+├── generate_notebook.py        # Script that generates notebook.ipynb via nbformat
+├── requirements.txt            # Python dependencies
+├── README.md
 └── data/
-    ├── owid-energy.csv     # Cached OWID dataset (auto-downloaded on first run)
+    ├── owid-energy.csv         # Bundled: OWID energy dataset (~9 MB)
+    ├── iea_investment.csv      # Bundled: IEA global clean energy investment
+    ├── irena_lcoe.csv          # Bundled: IRENA levelized cost of energy
+    ├── worldbank_gdp.csv       # Auto-generated on first run (World Bank GDP)
+    ├── stock_prices.csv        # Auto-generated on first run (Yahoo Finance prices)
     ├── sec2_investment.png
     ├── sec3_lcoe.png
-    ├── sec4_map.html       # Interactive Plotly choropleth map
+    ├── sec4_map.html           # Interactive Plotly choropleth map
     ├── sec4_countries.png
     ├── sec5_stocks.png
     ├── sec5_heatmap.png
@@ -89,15 +145,17 @@ renewable-energy-finance/
    jupyter notebook notebook.ipynb
    ```
 
-The OWID energy dataset (~9 MB) is downloaded automatically on the first run and cached in the
-`data/` folder. All subsequent runs use the local cache.
+On first run, the notebook fetches World Bank GDP data (`wbgapi`) and stock prices (`yfinance`)
+and saves them as CSV files in `data/`. All subsequent runs load from the local cache.
+The OWID dataset, IEA investment data, and IRENA LCOE data are bundled in the repository
+and require no network access.
 
 ---
 
 ## Key Findings
 
 - Global clean energy investment grew approximately 16x from $40 billion (2004) to $651 billion (2023).
-- Solar PV levelized cost fell roughly 88% between 2010 and 2023, from $378/MWh to $44/MWh.
+- Solar PV LCOE fell roughly 88% between 2010 and 2023, from $378/MWh to $44/MWh.
 - Global solar electricity generation grew over 100x between 2010 and 2023.
 - Despite the physical buildout, clean energy ETFs (ICLN) underperformed the S&P 500 from
   2019 to 2024, largely due to interest rate sensitivity in capital-intensive projects.
@@ -112,6 +170,7 @@ The OWID energy dataset (~9 MB) is downloaded automatically on the first run and
 - K-means clustering to group countries by energy transition stage
 - Green bonds market analysis using [Climate Bonds Initiative](https://www.climatebonds.net/resources/reports) data
 - Carbon price impact using EU ETS data from [Ember](https://ember-climate.org/data/)
+- ESG fund flow analysis for a deeper finance-sustainability link
 
 ---
 

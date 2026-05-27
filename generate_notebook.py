@@ -18,27 +18,49 @@ cells = []
 cells.append(md("""\
 # Renewable Energy Finance: A Data Analytics Exploration
 
-**Datasets**
-| Source | What it covers | Access |
-|---|---|---|
-| [Our World in Data – Energy](https://github.com/owid/energy-data) | Generation, share, consumption (200+ countries, 1965–2023) | Auto-downloaded CSV |
-| IEA World Energy Investment Reports | Global clean energy investment ($B, 2004–2023) | Hardcoded from public reports |
-| IRENA Renewable Power Generation Costs | Solar & wind LCOE ($/MWh, 2010–2023) | Hardcoded from public reports |
-| [World Bank Open Data](https://data.worldbank.org/) | GDP per capita by country | `wbgapi` library |
-| [Yahoo Finance](https://finance.yahoo.com/) | Clean energy & benchmark stock prices | `yfinance` library |
+An end-to-end data analytics project examining the intersection of renewable energy growth,
+cost trends, and financial market performance across investment flows, levelized cost of
+energy, country-level generation, and clean energy stock returns.
+
+---
 
 **Sections**
-1. Setup & Data Loading
+1. Setup and Data Loading
 2. Global Clean Energy Investment Trends
 3. The Renewable Energy Cost Revolution (LCOE)
 4. Country-Level Generation Analysis
 5. Clean Energy Stocks vs the Market
-6. Correlations & Key Insights
-7. Conclusions & Next Steps
+6. Correlations and Key Insights
+7. Conclusions and Next Steps
 """))
 
 # ── SECTION 1: SETUP ────────────────────────────────────────────────────────
-cells.append(md("## Section 1: Setup & Data Loading"))
+cells.append(md("""\
+## Section 1: Setup and Data Loading
+
+### Datasets Used
+
+| File | Source | What it measures | Why it was chosen |
+|---|---|---|---|
+| `owid-energy.csv` | [Our World in Data](https://github.com/owid/energy-data) | Electricity generation (TWh) by source, renewables share, GDP, population — 200+ countries, 1965-2023 | Most comprehensive freely available long-run energy dataset; standardized ISO country codes enable choropleth maps and cross-country comparisons |
+| `iea_investment.csv` | [IEA World Energy Investment 2024](https://www.iea.org/reports/world-energy-investment) | Global clean energy investment in USD billions, 2004-2023 | Official global benchmark for tracking capital flows into clean energy; covers renewables, EVs, efficiency, grids, and storage |
+| `irena_lcoe.csv` | [IRENA Renewable Power Generation Costs 2023](https://www.irena.org/Publications/2024/Sep/Renewable-Power-Generation-Costs-in-2023) | Global weighted-average LCOE (USD/MWh) for solar PV, onshore wind, and natural gas CCGT, 2010-2023 | Only publicly available global LCOE time series; enables direct cost comparison between renewables and fossil fuels over time |
+| `worldbank_gdp.csv` | [World Bank Open Data](https://data.worldbank.org/indicator/NY.GDP.PCAP.KD) | GDP per capita (constant 2015 USD) by country, 2000-2023 | Used to contextualize renewable adoption against national wealth in the Section 4 scatter plot; fetched via `wbgapi` and cached locally |
+| `stock_prices.csv` | [Yahoo Finance](https://finance.yahoo.com/) | Daily adjusted closing prices for ICLN, XLE, SPY, NEE, ENPH, FSLR, SEDG, 2019-2024 | Enables direct financial comparison between clean energy, fossil fuel, and broad market performance; fetched via `yfinance` and cached locally |
+
+### How Each Dataset Is Used
+
+- **OWID** drives Sections 2 (global solar/wind generation time series), 4 (choropleth map,
+  top-20 countries bar chart, GDP scatter), and 6 (correlation matrix inputs).
+- **IEA investment** drives the primary investment bar chart and YoY growth chart in Section 2,
+  and feeds into the Section 6 correlation matrix.
+- **IRENA LCOE** drives all Section 3 charts (absolute cost curves and indexed comparison)
+  and feeds into the Section 6 correlation matrix.
+- **World Bank GDP** provides the x-axis for the Section 4 scatter plot (renewables share vs.
+  national wealth).
+- **Yahoo Finance prices** drive all of Section 5 (normalized returns, annual heatmap, rolling
+  correlation) and the stock-return insight in Section 6.
+"""))
 
 cells.append(code("""\
 import pandas as pd
@@ -68,49 +90,133 @@ plt.rcParams.update({
     'legend.fontsize': 9,
 })
 PALETTE = ['#2E86AB', '#F18F01', '#C73E1D', '#44BBA4', '#A23B72', '#6B4226', '#393E41']
-print("Libraries loaded successfully.")
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+print("Libraries loaded.")
 """))
 
 cells.append(code("""\
-# ── 1a. OWID Energy Data ────────────────────────────────────────────────────
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
-OWID_PATH = DATA_DIR / "owid-energy.csv"
+# ── Dataset 1: OWID Energy Data ─────────────────────────────────────────────
+# Source  : https://github.com/owid/energy-data
+# File    : data/owid-energy.csv  (bundled with the repo; ~9 MB)
+# Columns used: country, year, iso_code, population, gdp,
+#   solar_electricity, wind_electricity, hydro_electricity,
+#   other_renewable_electricity, renewables_electricity,
+#   renewables_share_elec, fossil_electricity
+# Why     : Longest freely available country-level energy time series (1965-2023).
+#           ISO codes enable choropleth maps; generation figures (TWh) track
+#           real-world renewable buildout alongside financial data.
 
+OWID_PATH = DATA_DIR / "owid-energy.csv"
 if not OWID_PATH.exists():
-    print("Downloading OWID energy dataset (~10 MB, cached after first run)...")
+    print("owid-energy.csv not found locally. Downloading from Our World in Data (~9 MB)...")
     url = "https://raw.githubusercontent.com/owid/energy-data/master/owid-energy-data.csv"
     r = requests.get(url, timeout=120)
     r.raise_for_status()
     OWID_PATH.write_bytes(r.content)
     print("  Saved to data/owid-energy.csv")
 else:
-    print("Using cached data/owid-energy.csv")
+    print("OWID data: using bundled data/owid-energy.csv")
 
 df_raw = pd.read_csv(OWID_PATH, low_memory=False)
-
-# World aggregate row for global time-series
 df_world = df_raw[df_raw['country'] == 'World'].copy()
-
-# Country-level rows only (OWID uses "OWID_..." iso codes for aggregates)
 df = df_raw[
     df_raw['iso_code'].notna() &
     ~df_raw['iso_code'].str.startswith('OWID', na=False)
 ].copy()
-
-print(f"Full dataset  : {df_raw.shape}")
-print(f"Countries only: {df.shape}  |  {df['country'].nunique()} unique countries")
-print(f"Year range    : {df['year'].min()} - {df['year'].max()}")
-
-# Key generation columns available (TWh)
-GEN_COLS = ['solar_electricity', 'wind_electricity', 'hydro_electricity',
-            'renewables_electricity', 'fossil_electricity']
-print("\\nSample 2022 global generation (TWh):")
-df_world[df_world['year'] == 2022][GEN_COLS].iloc[0]
+print(f"  Shape: {df_raw.shape} | {df['country'].nunique()} countries | {df['year'].min()}-{df['year'].max()}")
 """))
 
 cells.append(code("""\
-# ── 1b. Stock Price Data via yfinance ───────────────────────────────────────
+# ── Dataset 2: IEA Clean Energy Investment ───────────────────────────────────
+# Source  : IEA World Energy Investment 2024
+#           https://www.iea.org/reports/world-energy-investment
+# File    : data/iea_investment.csv  (bundled with the repo)
+# Columns : year, investment_bn (USD billions), source
+# Why     : Official global benchmark for clean energy capital flows.
+#           Covers all clean energy sectors (renewables, EVs, efficiency,
+#           grids, storage) and spans 2004-2023 in a consistent series.
+
+df_inv = pd.read_csv(DATA_DIR / "iea_investment.csv")
+print(f"IEA investment data: {df_inv.shape} | years {df_inv['year'].min()}-{df_inv['year'].max()}")
+df_inv.head(3)
+"""))
+
+cells.append(code("""\
+# ── Dataset 3: IRENA Levelized Cost of Energy ────────────────────────────────
+# Source  : IRENA Renewable Power Generation Costs 2023
+#           https://www.irena.org/Publications/2024/Sep/Renewable-Power-Generation-Costs-in-2023
+# File    : data/irena_lcoe.csv  (bundled with the repo)
+# Columns : year,
+#           solar_pv_utility_usd_mwh  (utility-scale solar PV, USD/MWh)
+#           onshore_wind_usd_mwh      (onshore wind, USD/MWh)
+#           natural_gas_ccgt_usd_mwh  (combined-cycle gas turbine, USD/MWh)
+#           source
+# Why     : Only freely available global LCOE time series covering both
+#           renewables and fossil fuels.  Enables direct cost comparison
+#           and quantification of the "cost crossover" moment.
+
+df_lcoe_raw = pd.read_csv(DATA_DIR / "irena_lcoe.csv")
+# Rename to display-friendly labels used throughout the notebook
+df_lcoe = df_lcoe_raw.rename(columns={
+    'solar_pv_utility_usd_mwh' : 'Solar PV (Utility)',
+    'onshore_wind_usd_mwh'     : 'Onshore Wind',
+    'natural_gas_ccgt_usd_mwh' : 'Natural Gas (CCGT)',
+})
+print(f"IRENA LCOE data: {df_lcoe.shape} | years {df_lcoe['year'].min()}-{df_lcoe['year'].max()}")
+df_lcoe[['year', 'Solar PV (Utility)', 'Onshore Wind', 'Natural Gas (CCGT)']].head(3)
+"""))
+
+cells.append(code("""\
+# ── Dataset 4: World Bank GDP per Capita ─────────────────────────────────────
+# Source  : World Bank Open Data — indicator NY.GDP.PCAP.KD
+#           https://data.worldbank.org/indicator/NY.GDP.PCAP.KD
+# File    : data/worldbank_gdp.csv  (cached on first run via wbgapi)
+# Columns : iso_code, wb_country, year, gdp_per_capita (constant 2015 USD)
+# Why     : Used as the x-axis in the Section 4 scatter plot to show whether
+#           wealthier countries have higher renewable energy shares.
+#           wbgapi provides a clean Python interface to the World Bank API.
+
+WB_PATH = DATA_DIR / "worldbank_gdp.csv"
+if WB_PATH.exists():
+    wb_gdp = pd.read_csv(WB_PATH)
+    print(f"World Bank GDP: using cached data/worldbank_gdp.csv  {wb_gdp.shape}")
+else:
+    print("Fetching World Bank GDP per capita (constant 2015 USD)...")
+    try:
+        wb_raw = wb.data.DataFrame('NY.GDP.PCAP.KD', time=range(2000, 2024), labels=True).reset_index()
+        wb_raw.columns = [int(c.replace('YR', '')) if c.startswith('YR') else c for c in wb_raw.columns]
+        id_cols = [c for c in wb_raw.columns if not isinstance(c, int)]
+        wb_gdp = wb_raw.melt(id_vars=id_cols, var_name='year', value_name='gdp_per_capita')
+        wb_gdp['year'] = wb_gdp['year'].astype(int)
+        wb_gdp.rename(columns={'economy': 'iso_code', 'Country': 'wb_country'}, inplace=True)
+        wb_gdp.dropna(subset=['gdp_per_capita'], inplace=True)
+        wb_gdp.to_csv(WB_PATH, index=False)
+        print(f"  Saved to data/worldbank_gdp.csv  {wb_gdp.shape}")
+    except Exception as e:
+        print(f"World Bank fetch failed: {e}. GDP scatter will be skipped.")
+        wb_gdp = None
+"""))
+
+cells.append(code("""\
+# ── Dataset 5: Yahoo Finance Stock Prices ────────────────────────────────────
+# Source  : Yahoo Finance via yfinance library
+#           https://finance.yahoo.com/
+# File    : data/stock_prices.csv  (cached on first run via yfinance)
+# Columns : Date (index), ICLN, XLE, SPY, NEE, ENPH, FSLR, SEDG
+#           All prices are adjusted closing prices (splits and dividends adjusted)
+# Tickers :
+#   ICLN  iShares Global Clean Energy ETF (clean energy benchmark)
+#   XLE   Energy Select Sector SPDR ETF   (fossil fuel benchmark)
+#   SPY   S&P 500 ETF                     (broad market benchmark)
+#   NEE   NextEra Energy                  (largest US clean utility)
+#   ENPH  Enphase Energy                  (solar microinverters)
+#   FSLR  First Solar                     (US solar panel manufacturer)
+#   SEDG  SolarEdge Technologies          (solar inverters)
+# Why     : Enables financial performance analysis of clean energy vs fossil
+#           fuel vs broad market from 2019-2024, covering pre/post-COVID and
+#           the 2022 rate-hike cycle.
+
 TICKERS = {
     'ICLN': 'iShares Clean Energy ETF',
     'XLE' : 'Energy Select (Fossil Fuels)',
@@ -120,62 +226,39 @@ TICKERS = {
     'FSLR': 'First Solar',
     'SEDG': 'SolarEdge Technologies',
 }
+PRICES_PATH = DATA_DIR / "stock_prices.csv"
 
-print("Fetching 5-year stock price history from Yahoo Finance...")
-raw = yf.download(
-    list(TICKERS.keys()),
-    start='2019-01-01',
-    end='2024-12-31',
-    auto_adjust=True,
-    progress=False,
-)
-prices = raw['Close'].copy()
-prices.index = pd.to_datetime(prices.index)
-prices.dropna(how='all', inplace=True)
+if PRICES_PATH.exists():
+    prices = pd.read_csv(PRICES_PATH, index_col=0, parse_dates=True)
+    prices.index.name = None
+    print(f"Stock prices: using cached data/stock_prices.csv  {prices.shape}")
+else:
+    print("Fetching stock prices from Yahoo Finance (2019-2024)...")
+    raw = yf.download(list(TICKERS.keys()), start='2019-01-01', end='2024-12-31',
+                      auto_adjust=True, progress=False)
+    prices = raw['Close'].copy()
+    prices.index = pd.to_datetime(prices.index)
+    prices.dropna(how='all', inplace=True)
+    prices.to_csv(PRICES_PATH)
+    print(f"  Saved to data/stock_prices.csv  {prices.shape}")
 
-print(f"Loaded {prices.shape[1]} tickers x {prices.shape[0]} trading days")
-print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
+print(f"  Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
 prices.tail(3)
 """))
 
-cells.append(code("""\
-# ── 1c. World Bank GDP per capita ───────────────────────────────────────────
-print("Fetching World Bank: GDP per capita (constant 2015 USD)...")
-
-try:
-    wb_raw = wb.data.DataFrame('NY.GDP.PCAP.KD', time=range(2000, 2024), labels=True).reset_index()
-    wb_raw.columns = [int(c.replace('YR', '')) if c.startswith('YR') else c for c in wb_raw.columns]
-    id_cols = [c for c in wb_raw.columns if not isinstance(c, int)]
-    wb_gdp = wb_raw.melt(id_vars=id_cols, var_name='year', value_name='gdp_per_capita')
-    wb_gdp['year'] = wb_gdp['year'].astype(int)
-    wb_gdp.rename(columns={'economy': 'iso_code', 'Country': 'wb_country'}, inplace=True)
-    wb_gdp.dropna(subset=['gdp_per_capita'], inplace=True)
-    print(f"World Bank data loaded: {wb_gdp.shape}")
-except Exception as e:
-    print(f"World Bank fetch failed ({e}). Will use OWID gdp column as fallback.")
-    wb_gdp = None
-"""))
-
 # ── SECTION 2: INVESTMENT TRENDS ────────────────────────────────────────────
-cells.append(md("---\n## Section 2: Global Clean Energy Investment Trends"))
+cells.append(md("---\n## Section 2: Global Clean Energy Investment Trends\n\n**Data:** `iea_investment.csv` (investment bars) and `owid-energy.csv` (generation fill chart)"))
 
 cells.append(code("""\
-# Global clean energy investment — IEA World Energy Investment (2024 edition)
-# Source: https://www.iea.org/reports/world-energy-investment (USD billions)
-inv_years = list(range(2004, 2024))
-inv_bn    = [40, 55, 82, 127, 174, 162, 226, 286, 269, 251,
-             282, 312, 295, 317, 331, 367, 382, 465, 558, 651]
-df_inv = pd.DataFrame({'year': inv_years, 'investment_bn': inv_bn})
-
 fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
-# Left — Annual investment bars
+# Left: Annual investment bars (IEA data)
 ax = axes[0]
 bar_colors = [PALETTE[2] if y >= 2020 else PALETTE[0] for y in df_inv['year']]
 bars = ax.bar(df_inv['year'], df_inv['investment_bn'], color=bar_colors,
               edgecolor='white', linewidth=0.4)
 ax.axvspan(2019.5, 2020.5, alpha=0.12, color='red', label='COVID-19 dip')
-for bar, val in zip(bars[-3:], inv_bn[-3:]):
+for bar, val in zip(bars[-3:], df_inv['investment_bn'].values[-3:]):
     ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 6,
             f'${val}B', ha='center', va='bottom', fontsize=8, fontweight='bold')
 ax.set_title('Global Clean Energy Investment\\n(IEA, 2004-2023)', fontweight='bold')
@@ -184,17 +267,17 @@ ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f'${x:,.0f}B'))
 ax.set_xlim(2003, 2024)
 ax.legend()
 
-# Right — Global solar & wind electricity generation growth (TWh)
+# Right: Global solar and wind electricity generation (OWID)
 gen_w = df_world[df_world['year'] >= 2004][['year', 'solar_electricity', 'wind_electricity']].dropna()
 ax2 = axes[1]
 ax2.fill_between(gen_w['year'], gen_w['solar_electricity'], alpha=0.75, color=PALETTE[1], label='Solar PV')
 ax2.fill_between(gen_w['year'], gen_w['wind_electricity'],  alpha=0.65, color=PALETTE[0], label='Wind')
-ax2.set_title('Global Solar & Wind Electricity Generation\\n(OWID, TWh)', fontweight='bold')
+ax2.set_title('Global Solar and Wind Electricity Generation\\n(OWID, TWh)', fontweight='bold')
 ax2.set_ylabel('Generation (TWh)')
 ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f'{x:,.0f} TWh'))
 ax2.legend()
 
-plt.suptitle('Section 2 - Global Renewable Energy Investment & Generation Growth',
+plt.suptitle('Section 2 - Global Renewable Energy Investment and Generation Growth',
              fontsize=14, fontweight='bold', y=1.02)
 plt.tight_layout()
 plt.savefig('data/sec2_investment.png', dpi=150, bbox_inches='tight')
@@ -223,24 +306,15 @@ plt.show()
 """))
 
 # ── SECTION 3: LCOE ─────────────────────────────────────────────────────────
-cells.append(md("---\n## Section 3: The Renewable Energy Cost Revolution (LCOE)"))
+cells.append(md("---\n## Section 3: The Renewable Energy Cost Revolution (LCOE)\n\n**Data:** `irena_lcoe.csv`"))
 
 cells.append(code("""\
-# Levelized Cost of Energy — IRENA Renewable Power Generation Costs (2023 edition)
-# Source: https://www.irena.org/Publications/2024/Sep/Renewable-Power-Generation-Costs-in-2023
-lcoe_data = {
-    'year'              : list(range(2010, 2024)),
-    'Solar PV (Utility)': [378, 284, 201, 165, 138, 114, 88, 64, 56, 47, 39, 37, 49, 44],
-    'Onshore Wind'      : [102,  98,  93,  87,  80,  68, 60, 52, 49, 41, 39, 33, 34, 33],
-    'Natural Gas (CCGT)': [ 74,  72,  70,  68,  65,  63, 59, 57, 56, 54, 59, 68,115, 82],
-}
-df_lcoe = pd.DataFrame(lcoe_data)
-
 fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+styles = [('Solar PV (Utility)', PALETTE[1], 'o'),
+          ('Onshore Wind',       PALETTE[0], 's'),
+          ('Natural Gas (CCGT)', PALETTE[2], '^')]
 
 ax = axes[0]
-styles = [('Solar PV (Utility)', PALETTE[1], 'o'), ('Onshore Wind', PALETTE[0], 's'),
-          ('Natural Gas (CCGT)', PALETTE[2], '^')]
 for col, color, marker in styles:
     ax.plot(df_lcoe['year'], df_lcoe[col], marker + '-', color=color, lw=2.5, ms=6, label=col)
 
@@ -292,10 +366,9 @@ pd.DataFrame(summary)
 """))
 
 # ── SECTION 4: COUNTRY ANALYSIS ─────────────────────────────────────────────
-cells.append(md("---\n## Section 4: Country-Level Generation Analysis"))
+cells.append(md("---\n## Section 4: Country-Level Generation Analysis\n\n**Data:** `owid-energy.csv` (generation and share) + `worldbank_gdp.csv` (GDP scatter)"))
 
 cells.append(code("""\
-# Use electricity generation (TWh) as the measure — direct from OWID
 GEN_COLS = ['solar_electricity', 'wind_electricity', 'hydro_electricity']
 latest_year = df.dropna(subset=GEN_COLS)['year'].max()
 df_latest = df[df['year'] == latest_year].copy()
@@ -306,13 +379,11 @@ df_latest['total_renewables_twh'] = (
     df_latest['hydro_electricity'].fillna(0) +
     df_latest['other_renewable_electricity'].fillna(0)
 )
-
-# Renewables share of electricity (%)
 df_latest['ren_share'] = df_latest['renewables_share_elec']
 
 print(f"Analysis year : {latest_year}")
-print(f"Countries with generation data: {df_latest.dropna(subset=['total_renewables_twh']).shape[0]}")
-print(f"Countries with share data     : {df_latest.dropna(subset=['ren_share']).shape[0]}")
+print(f"Countries with generation data : {df_latest.dropna(subset=['total_renewables_twh']).shape[0]}")
+print(f"Countries with share data      : {df_latest.dropna(subset=['ren_share']).shape[0]}")
 """))
 
 cells.append(code("""\
@@ -339,13 +410,13 @@ fig_map.update_layout(
 )
 fig_map.write_html('data/sec4_map.html')
 fig_map.show()
-print("Interactive map also saved to data/sec4_map.html")
+print("Interactive map saved to data/sec4_map.html")
 """))
 
 cells.append(code("""\
 fig, axes = plt.subplots(1, 2, figsize=(18, 7))
 
-# Left: Top 20 countries by total renewables generation (stacked bar)
+# Left: Top 20 countries stacked bar
 top20 = (
     df_latest.dropna(subset=['total_renewables_twh'])
     .nlargest(20, 'total_renewables_twh')
@@ -355,10 +426,10 @@ top20 = (
     .copy()
 )
 stack_components = [
-    ('hydro_electricity',            'Hydro',       PALETTE[0]),
-    ('wind_electricity',             'Wind',        PALETTE[1]),
-    ('solar_electricity',            'Solar PV',    PALETTE[2]),
-    ('other_renewable_electricity',  'Other RE',    PALETTE[3]),
+    ('hydro_electricity',           'Hydro',    PALETTE[0]),
+    ('wind_electricity',            'Wind',     PALETTE[1]),
+    ('solar_electricity',           'Solar PV', PALETTE[2]),
+    ('other_renewable_electricity', 'Other RE', PALETTE[3]),
 ]
 bottoms = np.zeros(len(top20))
 for col, label, color in stack_components:
@@ -371,12 +442,21 @@ axes[0].legend(loc='lower right')
 axes[0].xaxis.set_major_formatter(FuncFormatter(lambda x, _: f'{x:,.0f} TWh'))
 
 # Right: Renewables share vs GDP per capita scatter
-scatter_df = df_latest.dropna(subset=['ren_share', 'gdp', 'population']).copy()
-scatter_df = scatter_df[(scatter_df['population'] > 0) & (scatter_df['gdp'] > 0)].copy()
-scatter_df['gdp_pc'] = scatter_df['gdp'] / scatter_df['population']
+# Use World Bank GDP if available, otherwise fall back to OWID gdp column
+if wb_gdp is not None:
+    latest_wb = wb_gdp[wb_gdp['year'] == latest_year][['iso_code', 'gdp_per_capita']].copy()
+    scatter_df = df_latest.merge(latest_wb, on='iso_code', how='inner')
+    gdp_col = 'gdp_per_capita'
+else:
+    scatter_df = df_latest.dropna(subset=['gdp', 'population']).copy()
+    scatter_df = scatter_df[(scatter_df['population'] > 0) & (scatter_df['gdp'] > 0)].copy()
+    scatter_df['gdp_per_capita'] = scatter_df['gdp'] / scatter_df['population']
+    gdp_col = 'gdp_per_capita'
+
+scatter_df = scatter_df.dropna(subset=['ren_share', gdp_col]).copy()
 
 sc = axes[1].scatter(
-    scatter_df['gdp_pc'] / 1000,
+    scatter_df[gdp_col] / 1000,
     scatter_df['ren_share'],
     s=scatter_df['population'].apply(lambda x: np.sqrt(x / 1e5)).clip(10, 200),
     c=scatter_df['total_renewables_twh'],
@@ -388,9 +468,9 @@ LABEL_COUNTRIES = ['Norway', 'Iceland', 'Brazil', 'China', 'Germany',
                    'United States', 'India', 'Saudi Arabia', 'Canada', 'Denmark']
 for _, row in scatter_df[scatter_df['country'].isin(LABEL_COUNTRIES)].iterrows():
     axes[1].annotate(row['country'],
-                     xy=(row['gdp_pc'] / 1000, row['ren_share']),
+                     xy=(row[gdp_col] / 1000, row['ren_share']),
                      xytext=(4, 0), textcoords='offset points', fontsize=7.5)
-axes[1].set_xlabel('GDP per Capita (Thousand USD, 2017 PPP)')
+axes[1].set_xlabel('GDP per Capita (Thousand USD, constant 2015)')
 axes[1].set_ylabel('Renewables Share of Electricity (%)')
 axes[1].set_title('Renewables Share vs. GDP per Capita\\n(bubble size = population)', fontweight='bold')
 axes[1].set_xscale('log')
@@ -404,7 +484,7 @@ plt.show()
 """))
 
 # ── SECTION 5: STOCKS ────────────────────────────────────────────────────────
-cells.append(md("---\n## Section 5: Clean Energy Stocks vs the Market"))
+cells.append(md("---\n## Section 5: Clean Energy Stocks vs the Market\n\n**Data:** `stock_prices.csv`"))
 
 cells.append(code("""\
 def normalize_to_100(series):
@@ -412,9 +492,8 @@ def normalize_to_100(series):
 
 fig, axes = plt.subplots(1, 2, figsize=(18, 6))
 
-# Left: ETF benchmarks
-ax = axes[0]
 BENCHMARK = {'ICLN': (PALETTE[3], '-', 2.5), 'XLE': (PALETTE[2], '--', 2.5), 'SPY': ('black', ':', 2.0)}
+ax = axes[0]
 for ticker, (color, style, lw) in BENCHMARK.items():
     if ticker in prices.columns:
         normed = normalize_to_100(prices[ticker].dropna())
@@ -430,7 +509,6 @@ ax.set_title('Clean Energy vs. Fossil Fuels vs. S&P 500\\n(Normalized: Jan 2019 
 ax.set_ylabel('Indexed Price (Jan 2019 = 100)')
 ax.legend()
 
-# Right: Individual stocks
 INDIV = ['NEE', 'ENPH', 'FSLR', 'SEDG']
 ax2 = axes[1]
 for i, ticker in enumerate(INDIV):
@@ -505,10 +583,9 @@ if 'ICLN' in prices.columns and 'XLE' in prices.columns:
 """))
 
 # ── SECTION 6: CORRELATIONS ──────────────────────────────────────────────────
-cells.append(md("---\n## Section 6: Correlations & Key Insights"))
+cells.append(md("---\n## Section 6: Correlations and Key Insights\n\n**Data:** all five datasets combined into a single annual panel."))
 
 cells.append(code("""\
-# Build joint annual dataset: global solar/wind generation + investment + LCOE + ICLN returns
 world_gen = (
     df_world[df_world['year'] >= 2004]
     [['year', 'solar_electricity', 'wind_electricity', 'renewables_electricity']]
@@ -519,27 +596,23 @@ icln_annual = None
 if 'ICLN' in prices.columns:
     icln_yr  = prices['ICLN'].resample('YE').last()
     icln_ret = icln_yr.pct_change().dropna() * 100
-    # Build DataFrame directly from index to avoid fragile column naming after reset_index()
-    icln_annual = pd.DataFrame({
-        'year'       : icln_ret.index.year,
-        'icln_return': icln_ret.values,
-    })
+    icln_annual = pd.DataFrame({'year': icln_ret.index.year, 'icln_return': icln_ret.values})
 
 lcoe_m = df_lcoe[['year', 'Solar PV (Utility)', 'Onshore Wind']].rename(
     columns={'Solar PV (Utility)': 'lcoe_solar', 'Onshore Wind': 'lcoe_wind'}
 )
-combined = world_gen.merge(df_inv, on='year', how='left').merge(lcoe_m, on='year', how='left')
+combined = world_gen.merge(df_inv[['year','investment_bn']], on='year', how='left') \
+                    .merge(lcoe_m, on='year', how='left')
 if icln_annual is not None:
     combined = combined.merge(icln_annual, on='year', how='left')
 
-# Correlation matrix (lower triangle only)
 CORR_MAP = {
-    'solar_electricity'   : 'Solar Generation\\n(TWh)',
-    'wind_electricity'    : 'Wind Generation\\n(TWh)',
-    'investment_bn'       : 'Clean Energy\\nInvestment ($B)',
-    'lcoe_solar'          : 'Solar LCOE\\n($/MWh)',
-    'lcoe_wind'           : 'Wind LCOE\\n($/MWh)',
-    'icln_return'         : 'ICLN Annual\\nReturn (%)',
+    'solar_electricity' : 'Solar Generation (TWh)',
+    'wind_electricity'  : 'Wind Generation (TWh)',
+    'investment_bn'     : 'Clean Energy Investment ($B)',
+    'lcoe_solar'        : 'Solar LCOE ($/MWh)',
+    'lcoe_wind'         : 'Wind LCOE ($/MWh)',
+    'icln_return'       : 'ICLN Annual Return (%)',
 }
 corr_df  = combined[[c for c in CORR_MAP if c in combined.columns]].rename(columns=CORR_MAP)
 corr_mat = corr_df.corr()
@@ -549,7 +622,7 @@ fig, ax = plt.subplots(figsize=(10, 8))
 sns.heatmap(corr_mat, annot=True, fmt='.2f', cmap='coolwarm', center=0,
             mask=mask, ax=ax, linewidths=0.5, square=True,
             cbar_kws={'label': 'Pearson r', 'shrink': 0.8}, annot_kws={'size': 10})
-ax.set_title('Section 6 - Correlation Matrix: Sustainability & Finance Variables',
+ax.set_title('Section 6 - Correlation Matrix: Sustainability and Finance Variables',
              fontweight='bold', pad=15)
 plt.tight_layout()
 plt.savefig('data/sec6_corr.png', dpi=150, bbox_inches='tight')
@@ -561,28 +634,24 @@ print("=" * 64)
 print("KEY ANALYTICAL INSIGHTS")
 print("=" * 64)
 
-# Insight 1: Investment vs solar generation correlation
 if 'investment_bn' in combined.columns and 'solar_electricity' in combined.columns:
     r = combined['investment_bn'].corr(combined['solar_electricity'])
     print(f"\\n1. Investment <-> Solar Generation correlation: r = {r:.2f}")
     print("   Strong positive link between capital flows and renewable output.\\n")
 
-# Insight 2: LCOE solar decline
 s, e = df_lcoe['Solar PV (Utility)'].iloc[0], df_lcoe['Solar PV (Utility)'].iloc[-1]
 print(f"2. Solar PV LCOE: ${s}/MWh (2010) -> ${e}/MWh (2023)")
 print(f"   {(s - e) / s * 100:.0f}% cost reduction in 13 years.\\n")
 
-# Insight 3: Investment CAGR
-inv_cagr = (inv_bn[-1] / inv_bn[0]) ** (1 / len(inv_bn)) - 1
+inv_vals = df_inv['investment_bn'].values
+inv_cagr = (inv_vals[-1] / inv_vals[0]) ** (1 / len(inv_vals)) - 1
 print(f"3. Clean energy investment CAGR (2004-2023): {inv_cagr * 100:.1f}%/year.\\n")
 
-# Insight 4: Solar generation growth
 s2010 = df_world[df_world['year'] == 2010]['solar_electricity'].values
 slast = df_world[df_world['year'] == latest_year]['solar_electricity'].values
 if len(s2010) and len(slast) and s2010[0] > 0:
     print(f"4. Global solar generation grew {slast[0] / s2010[0]:.0f}x (2010 to {latest_year}).\\n")
 
-# Insight 5: ICLN vs SPY total return
 if 'ICLN' in prices.columns and 'SPY' in prices.columns:
     icln_tot = normalize_to_100(prices['ICLN'].dropna()).iloc[-1] - 100
     spy_tot  = normalize_to_100(prices['SPY'].dropna()).iloc[-1] - 100
@@ -597,57 +666,45 @@ print("\\n" + "=" * 64)
 # ── SECTION 7: CONCLUSIONS ───────────────────────────────────────────────────
 cells.append(md("""\
 ---
-## Section 7: Conclusions & Next Steps
+## Section 7: Conclusions and Next Steps
 
 ### What the data tells us
 
 | Theme | Finding |
 |---|---|
-| **Investment surge** | Global clean energy investment grew 16x: $40B (2004) to $651B (2023) |
-| **Cost revolution** | Solar PV LCOE fell ~88% since 2010 - now cheaper than new gas in most markets |
-| **Generation explosion** | Global solar electricity generation grew ~100x between 2010 and 2023 |
-| **Geographic leaders** | China, USA, EU lead in absolute generation; Nordic/Hydro nations lead in share |
-| **Financial tension** | Clean energy ETFs showed high volatility despite strong physical buildout |
-| **Wind learning curve** | Onshore wind LCOE fell ~68% since 2010 - cheapest source in many regions |
+| Investment surge | Global clean energy investment grew 16x: $40B (2004) to $651B (2023) |
+| Cost revolution | Solar PV LCOE fell ~88% since 2010 - now cheaper than new gas in most markets |
+| Generation explosion | Global solar electricity generation grew ~100x between 2010 and 2023 |
+| Geographic leaders | China, USA, EU lead in absolute generation; Nordic and hydro nations lead in share |
+| Financial tension | Clean energy ETFs showed high volatility despite strong physical buildout |
+| Wind learning curve | Onshore wind LCOE fell ~68% since 2010 - cheapest source in many regions |
 
 ### Key Tension
 
-While the physical buildout of clean energy accelerated dramatically, **clean energy stocks (ICLN)
-underperformed** the S&P 500 from 2019-2024 - largely because rising interest rates in 2022-2023
+While the physical buildout of clean energy accelerated dramatically, clean energy stocks (ICLN)
+underperformed the S&P 500 from 2019 to 2024 - largely because rising interest rates in 2022-2023
 disproportionately hurt capital-intensive renewable projects. This highlights a gap between the
-**real-economy energy transition** and **financial market performance**.
+real-economy energy transition and financial market performance.
 
 ### Suggested Next Steps
 
 **Analytics extensions:**
-- Train a regression model to predict LCOE from cumulative capacity (learning curve quantification)
-- Apply k-means clustering to group countries by energy transition stage
+- Regression model to quantify the solar learning curve (LCOE vs. cumulative capacity)
+- K-means clustering to group countries by energy transition stage
 - Add IRENA green jobs data to correlate workforce growth with investment
 
 **Data additions:**
-- Green bonds market data ([Climate Bonds Initiative](https://www.climatebonds.net/resources/reports) - free CSV)
-- Carbon price data (EU ETS prices via [Ember](https://ember-climate.org/data/))
-- ESG scores via [MSCI / Yahoo Finance ESG data](https://finance.yahoo.com/screener/unsaved/00000000-0000-0000-0000-000000000000)
-
-**Automation:**
-- Schedule weekly stock price refresh with the `schedule` Python library
-- Pull latest OWID data on each run (they update annually)
+- Green bonds market data ([Climate Bonds Initiative](https://www.climatebonds.net/resources/reports))
+- Carbon price data via [Ember](https://ember-climate.org/data/)
+- ESG fund flow data for a deeper finance-sustainability link
 """))
 
 # ── ASSEMBLE & WRITE ─────────────────────────────────────────────────────────
 nb = new_notebook()
 nb.metadata = {
-    "kernelspec": {
-        "display_name": "Python 3",
-        "language": "python",
-        "name": "python3",
-    },
-    "language_info": {
-        "name": "python",
-        "version": "3.10.0",
-        "mimetype": "text/x-python",
-        "file_extension": ".py",
-    },
+    "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+    "language_info": {"name": "python", "version": "3.10.0",
+                      "mimetype": "text/x-python", "file_extension": ".py"},
 }
 nb.cells = cells
 
