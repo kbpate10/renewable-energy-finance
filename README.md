@@ -37,10 +37,7 @@ as CSV files in `data/` for all subsequent runs — no re-downloading needed.
   - `renewables_electricity` — total renewables generation (TWh)
   - `iso_code` — ISO 3-letter country code (enables choropleth maps)
   - `gdp`, `population` — for per-capita calculations
-- **Why this dataset:** Longest freely available country-level energy time series with
-  standardized country codes. Generation figures (TWh) track real-world renewable buildout
-  alongside financial data. Note: this dataset measures generation (TWh), not installed
-  capacity (GW).
+
 
 ### 2. IEA World Energy Investment (`data/iea_investment.csv`)
 
@@ -48,10 +45,7 @@ as CSV files in `data/` for all subsequent runs — no re-downloading needed.
 - **Report link:** https://www.iea.org/reports/world-energy-investment
 - **Coverage:** Global, 2004-2023
 - **Columns:** `year`, `investment_bn` (USD billions), `source`
-- **Why this dataset:** Official global benchmark for clean energy capital flows. Covers all
-  clean energy sectors (renewables, EVs, grids, efficiency, storage) in a consistent annual
-  series. Data extracted from the publicly available IEA report and stored as CSV so the
-  project runs entirely offline.
+
 
 ### 3. IRENA Renewable Power Generation Costs (`data/irena_lcoe.csv`)
 
@@ -59,10 +53,7 @@ as CSV files in `data/` for all subsequent runs — no re-downloading needed.
 - **Report link:** https://www.irena.org/Publications/2024/Sep/Renewable-Power-Generation-Costs-in-2023
 - **Coverage:** Global weighted averages, 2010-2023
 - **Columns:** `year`, `solar_pv_utility_usd_mwh`, `onshore_wind_usd_mwh`, `natural_gas_ccgt_usd_mwh`, `source`
-- **Why this dataset:** Only freely available global LCOE time series covering both renewables
-  and fossil fuels side-by-side. Enables direct cost comparison and identification of the
-  year renewables crossed below gas. Data extracted from the publicly available IRENA report
-  and stored as CSV.
+
 
 ### 4. World Bank GDP per Capita (`data/worldbank_gdp.csv`)
 
@@ -72,9 +63,7 @@ as CSV files in `data/` for all subsequent runs — no re-downloading needed.
 - **Columns:** `iso_code`, `wb_country`, `year`, `gdp_per_capita` (constant 2015 USD)
 - **Access:** Fetched automatically via the `wbgapi` Python library on first run and cached
   as `data/worldbank_gdp.csv`.
-- **Why this dataset:** Provides a consistent, comparable measure of national wealth across
-  countries, used as the x-axis in the Section 4 scatter plot to test whether wealthier
-  nations have higher renewable energy shares.
+
 
 ### 5. Yahoo Finance Stock Prices (`data/stock_prices.csv`)
 
@@ -94,8 +83,6 @@ as CSV files in `data/` for all subsequent runs — no re-downloading needed.
   | FSLR | First Solar | US solar panel manufacturer |
   | SEDG | SolarEdge Technologies | Solar inverters |
 
-- **Why this dataset:** Enables direct financial comparison of clean energy vs fossil fuel
-  vs broad market from 2019-2024, covering pre/post-COVID and the 2022 rate-hike cycle.
 
 ---
 
